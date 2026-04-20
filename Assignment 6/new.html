@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A* Maze Solver</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+  :root {
+    --bg: #0a0e1a;
+    --panel: #0f1628;
+    --border: #1e2d5a;
+    --accent: #00f5ff;
+    --accent2: #ff6b35;
+    --accent3: #7fff6b;
+    --text: #c8d8ff;
+    --dim: #4a5a8a;
+    --cell-empty: #111827;
+    --cell-wall: #1a1a2e;
+    --glow: 0 0 20px rgba(0,245,255,0.4);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: 
+      radial-gradient(ellipse at 20% 20%, rgba(0,245,255,0.05) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 80%, rgba(255,107,53,0.05) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container { position: relative; z-index: 1; width: 100%; max-width: 1100px; }
+
+  header {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(1.4rem, 3vw, 2.2rem);
+    font-weight: 900;
+    color: var(--accent);
+    text-shadow: var(--glow);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+  }
+
+  .subtitle {
+    color: var(--dim);
+    font-size: 0.75rem;
+    letter-spacing: 3px;
+    margin-top: 6px;
+  }
+
+  .main-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+
+  @media (max-width: 700px) {
+    .main-grid { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 20px;
+  }
+
+  .panel-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.65rem;
+    letter-spacing: 4px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Maze Grid */
+  #maze-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+
+  #maze {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+    width: 260px;
+    height: 260px;
+  }
+
+  .cell {
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 1px;
+    transition: all 0.3s ease;
+    position: relative;
+    cursor: default;
+  }
+
+  .cell-empty { background: var(--cell-empty); border: 1px solid #1a2240; }
+  .cell-wall {
+    background: linear-gradient(135deg, #1a1a2e, #0d0d1f);
+    border: 1px solid #2a0a3a;
+    box-shadow: inset 0 0 8px rgba(150,0,200,0.2);
+  }
+  .cell-wall::after {
+    content: '▪';
+    font-size: 1.2rem;
+    color: #3a1a5a;
+  }
+
+  .cell-start {
+    background: linear-gradient(135deg, #ff6b35, #cc4400);
+    border: 1px solid #ff8855;
+    box-shadow: 0 0 12px rgba(255,107,53,0.5);
+    color: white;
+  }
+
+  .cell-reward {
+    background: linear-gradient(135deg, #1a3a1a, #0d200d);
+    border: 1px solid var(--accent3);
+    box-shadow: 0 0 10px rgba(127,255,107,0.3);
+    color: var(--accent3);
+  }
+
+  .cell-visited {
+    background: linear-gradient(135deg, #0a1f3a, #051530);
+    border: 1px solid #1a4a7a;
+    animation: visitPulse 0.4s ease;
+  }
+
+  .cell-path {
+    background: linear-gradient(135deg, #003a4a, #002030);
+    border: 1px solid var(--accent);
+    box-shadow: 0 0 8px rgba(0,245,255,0.3);
+    animation: pathGlow 0.3s ease;
+  }
+
+  .cell-agent {
+    background: linear-gradient(135deg, #ff6b35, #ff9900);
+    border: 1px solid #ffcc00;
+    box-shadow: 0 0 16px rgba(255,200,0,0.6);
+    color: #fff;
+    z-index: 2;
+    animation: agentPulse 0.8s ease infinite alternate;
+  }
+
+  .cell-collected {
+    background: linear-gradient(135deg, #2a4a00, #1a3000);
+    border: 1px solid #88ff44;
+    box-shadow: 0 0 10px rgba(136,255,68,0.4);
+    color: #88ff44;
+  }
+
+  @keyframes visitPulse {
+    from { transform: scale(0.85); opacity: 0.5; }
+    to { transform: scale(1); opacity: 1; }
+  }
+
+  @keyframes pathGlow {
+    from { transform: scale(0.9); }
+    to { transform: scale(1); }
+  }
+
+  @keyframes agentPulse {
+    from { box-shadow: 0 0 12px rgba(255,200,0,0.5); }
+    to { box-shadow: 0 0 24px rgba(255,200,0,0.9); }
+  }
+
+  /* Legend */
+  .legend {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 16px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.65rem;
+    color: var(--dim);
+  }
+
+  .legend-box {
+    width: 14px; height: 14px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .speed-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.7rem;
+    color: var(--dim);
+  }
+
+  input[type=range] {
+    flex: 1;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+
+  .btn-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  button {
+    flex: 1;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 10px;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  button:hover {
+    background: var(--accent);
+    color: var(--bg);
+    box-shadow: var(--glow);
+  }
+
+  button:disabled {
+    border-color: var(--dim);
+    color: var(--dim);
+    cursor: not-allowed;
+  }
+
+  button.btn-reset {
+    border-color: var(--accent2);
+    color: var(--accent2);
+  }
+  button.btn-reset:hover {
+    background: var(--accent2);
+    color: var(--bg);
+    box-shadow: 0 0 20px rgba(255,107,53,0.4);
+  }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .stat-box {
+    background: #0a1020;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px;
+    text-align: center;
+  }
+
+  .stat-val {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .stat-label {
+    font-size: 0.55rem;
+    letter-spacing: 2px;
+    color: var(--dim);
+    text-transform: uppercase;
+    margin-top: 2px;
+  }
+
+  /* Log */
+  #log {
+    background: #050a14;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 12px;
+    height: 200px;
+    overflow-y: auto;
+    font-size: 0.68rem;
+    line-height: 1.8;
+  }
+
+  #log::-webkit-scrollbar { width: 4px; }
+  #log::-webkit-scrollbar-track { background: transparent; }
+  #log::-webkit-scrollbar-thumb { background: var(--dim); border-radius: 2px; }
+
+  .log-entry { color: var(--dim); }
+  .log-entry.reward { color: var(--accent3); }
+  .log-entry.move { color: var(--text); }
+  .log-entry.segment { color: var(--accent); font-weight: bold; }
+  .log-entry.done { color: var(--accent2); font-weight: bold; }
+  .log-entry.info { color: #8888aa; }
+
+  /* Path table */
+  .path-panel { grid-column: 1 / -1; }
+
+  #path-table-wrap {
+    overflow-x: auto;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.65rem;
+  }
+
+  th {
+    font-family: 'Orbitron', sans-serif;
+    letter-spacing: 2px;
+    color: var(--accent);
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.55rem;
+  }
+
+  td {
+    padding: 5px 12px;
+    border-bottom: 1px solid #0f1628;
+    color: var(--text);
+  }
+
+  tr:hover td { background: #0f1628; }
+
+  td.reward-cell { color: var(--accent3); font-weight: bold; }
+  td.start-cell { color: var(--accent2); }
+  td.path-cell { color: var(--accent); }
+
+  .matrix-display {
+    font-size: 0.8rem;
+    line-height: 2;
+    color: var(--text);
+    letter-spacing: 8px;
+    text-align: center;
+    margin: 10px 0;
+  }
+
+  .matrix-display .w { color: #6a3a8a; }
+  .matrix-display .s { color: var(--accent2); }
+  .matrix-display .r { color: var(--accent3); }
+  .matrix-display .e { color: var(--dim); }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>A* Maze Solver</h1>
+    <div class="subtitle">Collect all rewards · Manhattan Distance Heuristic</div>
+  </header>
+
+  <div class="main-grid">
+    <!-- Left: Maze -->
+    <div class="panel">
+      <div class="panel-title">▸ Maze Visualization</div>
+      <div id="maze-container">
+        <div id="maze"></div>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-box" style="background:#ff6b35;border:1px solid #ff8855"></div>Agent / Start</div>
+        <div class="legend-item"><div class="legend-box" style="background:#1a3a1a;border:1px solid #7fff6b"></div>Reward</div>
+        <div class="legend-item"><div class="legend-box" style="background:#003a4a;border:1px solid #00f5ff"></div>Path</div>
+        <div class="legend-item"><div class="legend-box" style="background:#0a1f3a;border:1px solid #1a4a7a"></div>Visited</div>
+        <div class="legend-item"><div class="legend-box" style="background:#1a1a2e;border:1px solid #3a1a5a"></div>Wall</div>
+        <div class="legend-item"><div class="legend-box" style="background:#2a4a00;border:1px solid #88ff44"></div>Collected</div>
+      </div>
+    </div>
+
+    <!-- Right: Controls + Stats + Log -->
+    <div class="panel">
+      <div class="panel-title">▸ Control Panel</div>
+
+      <div class="controls">
+        <div class="speed-row">
+          <span>SPEED</span>
+          <input type="range" id="speed" min="1" max="10" value="5">
+          <span id="speed-val">5</span>
+        </div>
+        <div class="btn-row">
+          <button id="btn-run">▶ RUN A*</button>
+          <button id="btn-step">STEP</button>
+          <button class="btn-reset" id="btn-reset">↺ RESET</button>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat-box">
+          <div class="stat-val" id="stat-step">0</div>
+          <div class="stat-label">Steps Taken</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="stat-rewards">0/4</div>
+          <div class="stat-label">Rewards</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="stat-visited">0</div>
+          <div class="stat-label">Cells Visited</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-val" id="stat-cost">0</div>
+          <div class="stat-label">Total Cost g(n)</div>
+        </div>
+      </div>
+
+      <div class="panel-title">▸ Execution Log</div>
+      <div id="log"></div>
+    </div>
+
+    <!-- Bottom: Path table -->
+    <div class="panel path-panel">
+      <div class="panel-title">▸ Full Path Record — All Tiles Visited</div>
+      <div id="path-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>STEP</th>
+              <th>POSITION (row,col)</th>
+              <th>ACTION</th>
+              <th>g(n)</th>
+              <th>h(n)</th>
+              <th>f(n)=g+h</th>
+              <th>EVENT</th>
+            </tr>
+          </thead>
+          <tbody id="path-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── Maze Definition ───────────────────────────────────────────────────
+const MAZE = [
+  [2, 0, 0, 0, 1],
+  [0, 1, 0, 0, 3],
+  [0, 3, 0, 1, 1],
+  [0, 1, 0, 0, 1],
+  [3, 0, 0, 0, 3]
+];
+
+const ROWS = 5, COLS = 5;
+const START = [0, 0];
+const REWARDS_ORIG = [[1,4],[2,1],[4,0],[4,4]];
+
+// ─── A* Implementation ─────────────────────────────────────────────────
+function heuristic(pos, goals) {
+  let minDist = Infinity;
+  for (const g of goals) {
+    const d = Math.abs(pos[0]-g[0]) + Math.abs(pos[1]-g[1]);
+    if (d < minDist) minDist = d;
+  }
+  return minDist;
+}
+
+function isValid(r, c) {
+  return r >= 0 && r < ROWS && c >= 0 && c < COLS && MAZE[r][c] !== 1;
+}
+
+const DIRS = [
+  [-1, 0, 'U'], [1, 0, 'D'], [0, -1, 'L'], [0, 1, 'R']
+];
+
+function astarSegment(start, goal, remainingGoals) {
+  const key = (r,c) => `${r},${c}`;
+  const openSet = new Map();
+  const gScore = new Map();
+  const fScore = new Map();
+  const cameFrom = new Map();
+  const actionFrom = new Map();
+
+  const startKey = key(...start);
+  gScore.set(startKey, 0);
+  fScore.set(startKey, heuristic(start, [goal]));
+  openSet.set(startKey, start);
+
+  while (openSet.size > 0) {
+    // Pick lowest f
+    let curKey = null, curF = Infinity;
+    for (const [k] of openSet) {
+      const f = fScore.get(k) ?? Infinity;
+      if (f < curF) { curF = f; curKey = k; }
+    }
+
+    const cur = openSet.get(curKey);
+    openSet.delete(curKey);
+
+    if (cur[0] === goal[0] && cur[1] === goal[1]) {
+      // Reconstruct path
+      const path = [];
+      let k = curKey;
+      while (cameFrom.has(k)) {
+        const prev = cameFrom.get(k);
+        const act = actionFrom.get(k);
+        const [r,c] = k.split(',').map(Number);
+        path.unshift({ pos:[r,c], action:act, g:gScore.get(k), h:heuristic([r,c], remainingGoals) });
+        k = prev;
+      }
+      return path;
+    }
+
+    for (const [dr, dc, action] of DIRS) {
+      const nr = cur[0]+dr, nc = cur[1]+dc;
+      if (!isValid(nr,nc)) continue;
+      const nk = key(nr,nc);
+      const ng = (gScore.get(curKey) ?? Infinity) + 1;
+      if (ng < (gScore.get(nk) ?? Infinity)) {
+        cameFrom.set(nk, curKey);
+        actionFrom.set(nk, action);
+        gScore.set(nk, ng);
+        fScore.set(nk, ng + heuristic([nr,nc],[goal]));
+        openSet.set(nk, [nr,nc]);
+      }
+    }
+  }
+  return null; // no path
+}
+
+function pickNearestReward(pos, rewards) {
+  let best = null, bestDist = Infinity;
+  for (const r of rewards) {
+    const d = Math.abs(pos[0]-r[0]) + Math.abs(pos[1]-r[1]);
+    if (d < bestDist) { bestDist = d; best = r; }
+  }
+  return best;
+}
+
+function solveAll() {
+  let pos = [...START];
+  let remaining = REWARDS_ORIG.map(r=>[...r]);
+  const fullPath = [{ pos:[...pos], action:'START', g:0, h:heuristic(pos, remaining), event:'Start' }];
+  let totalG = 0;
+
+  while (remaining.length > 0) {
+    const goal = pickNearestReward(pos, remaining);
+    const segment = astarSegment(pos, goal, remaining);
+    if (!segment) break;
+
+    for (const step of segment) {
+      totalG++;
+      const isReward = remaining.some(r=>r[0]===step.pos[0]&&r[1]===step.pos[1]);
+      fullPath.push({
+        pos: step.pos,
+        action: step.action,
+        g: totalG,
+        h: step.h,
+        event: isReward ? `Reward ✓ at (${step.pos[0]},${step.pos[1]})` : ''
+      });
+    }
+
+    remaining = remaining.filter(r=>!(r[0]===goal[0]&&r[1]===goal[1]));
+    pos = [...goal];
+  }
+
+  fullPath[fullPath.length-1].event += ' | EXIT 🏁';
+  return fullPath;
+}
+
+// ─── UI ────────────────────────────────────────────────────────────────
+const mazeEl = document.getElementById('maze');
+const logEl = document.getElementById('log');
+const tbody = document.getElementById('path-tbody');
+const statStep = document.getElementById('stat-step');
+const statRewards = document.getElementById('stat-rewards');
+const statVisited = document.getElementById('stat-visited');
+const statCost = document.getElementById('stat-cost');
+const speedEl = document.getElementById('speed');
+const speedVal = document.getElementById('speed-val');
+const btnRun = document.getElementById('btn-run');
+const btnStep = document.getElementById('btn-step');
+const btnReset = document.getElementById('btn-reset');
+
+let cells = [];
+let solution = [];
+let stepIdx = 0;
+let running = false;
+let runTimer = null;
+let rewardsCollected = 0;
+let visitedSet = new Set();
+
+function buildGrid() {
+  mazeEl.innerHTML = '';
+  cells = [];
+  for (let r = 0; r < ROWS; r++) {
+    cells[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      const div = document.createElement('div');
+      div.classList.add('cell');
+      const v = MAZE[r][c];
+      if (v === 1) div.classList.add('cell-wall');
+      else if (v === 2) { div.classList.add('cell-start'); div.textContent = 'A'; }
+      else if (v === 3) { div.classList.add('cell-reward'); div.textContent = 'R'; }
+      else div.classList.add('cell-empty');
+      mazeEl.appendChild(div);
+      cells[r][c] = div;
+    }
+  }
+}
+
+function resetCell(r, c) {
+  const div = cells[r][c];
+  div.className = 'cell';
+  const v = MAZE[r][c];
+  if (v === 1) { div.classList.add('cell-wall'); div.textContent = ''; }
+  else if (v === 2) { div.classList.add('cell-start'); div.textContent = 'A'; }
+  else if (v === 3) { div.classList.add('cell-reward'); div.textContent = 'R'; }
+  else { div.classList.add('cell-empty'); div.textContent = ''; }
+}
+
+function log(msg, cls='log-entry') {
+  const p = document.createElement('p');
+  p.className = `log-entry ${cls}`;
+  p.textContent = msg;
+  logEl.appendChild(p);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function addTableRow(s, idx) {
+  const tr = document.createElement('tr');
+  const event = s.event || '—';
+  const isReward = event.includes('Reward');
+  const isStart = event === 'Start';
+  const isDone = event.includes('EXIT');
+
+  tr.innerHTML = `
+    <td>${idx}</td>
+    <td class="${isStart?'start-cell':isReward||isDone?'reward-cell':'path-cell'}">(${s.pos[0]}, ${s.pos[1]})</td>
+    <td>${s.action}</td>
+    <td>${s.g}</td>
+    <td>${s.h}</td>
+    <td>${s.g + s.h}</td>
+    <td class="${isReward||isDone?'reward-cell':''}">${event}</td>
+  `;
+  tbody.appendChild(tr);
+  tr.scrollIntoView({ behavior:'smooth', block:'nearest' });
+}
+
+function applyStep(idx) {
+  const s = solution[idx];
+  const [r, c] = s.pos;
+
+  // Restore previous agent position
+  if (idx > 0) {
+    const prev = solution[idx-1];
+    const [pr, pc] = prev.pos;
+    cells[pr][pc].classList.remove('cell-agent');
+    // Mark as path or collected
+    const isCollectedReward = prev.event && prev.event.includes('Reward');
+    if (isCollectedReward) {
+      cells[pr][pc].className = 'cell cell-collected';
+      cells[pr][pc].textContent = '✓';
+    } else if (visitedSet.has(`${pr},${pc}`)) {
+      cells[pr][pc].className = 'cell cell-path';
+      cells[pr][pc].textContent = '';
+    }
+  }
+
+  visitedSet.add(`${r},${c}`);
+  cells[r][c].className = 'cell cell-agent';
+  cells[r][c].textContent = 'A';
+
+  // Stats
+  statStep.textContent = idx;
+  statCost.textContent = s.g;
+  statVisited.textContent = visitedSet.size;
+
+  if (s.event && s.event.includes('Reward')) {
+    rewardsCollected++;
+    statRewards.textContent = `${rewardsCollected}/4`;
+    log(`◉ REWARD COLLECTED at (${r},${c}) — g=${s.g}`, 'reward');
+  } else if (s.event === 'Start') {
+    log(`⊹ Agent initialized at (${r},${c})`, 'info');
+  } else {
+    const segMatch = s.event && s.event.match(/Seg(\d+)/);
+    if (segMatch) log(`━━ SEGMENT ${segMatch[1]} ━━`, 'segment');
+    log(`→ Move ${s.action}: (${r},${c})  f=${s.g+s.h} [g=${s.g}, h=${s.h}]`, 'move');
+  }
+
+  if (s.event && s.event.includes('EXIT')) {
+    log('⬛ ALL REWARDS COLLECTED. EXITING MAZE!', 'done');
+    cells[r][c].className = 'cell cell-collected';
+    cells[r][c].textContent = '✓';
+  }
+
+  addTableRow(s, idx);
+}
+
+function doStep() {
+  if (stepIdx >= solution.length) {
+    stopRun();
+    btnRun.disabled = true;
+    btnStep.disabled = true;
+    return;
+  }
+  applyStep(stepIdx);
+  stepIdx++;
+}
+
+function startRun() {
+  if (running) return;
+  running = true;
+  btnRun.disabled = true;
+  btnStep.disabled = true;
+
+  const delay = () => Math.max(50, 1100 - speedEl.value * 100);
+  
+  function tick() {
+    if (stepIdx >= solution.length) { stopRun(); return; }
+    doStep();
+    runTimer = setTimeout(tick, delay());
+  }
+  tick();
+}
+
+function stopRun() {
+  running = false;
+  clearTimeout(runTimer);
+  if (stepIdx < solution.length) {
+    btnRun.disabled = false;
+    btnStep.disabled = false;
+  }
+}
+
+function fullReset() {
+  stopRun();
+  stepIdx = 0;
+  rewardsCollected = 0;
+  visitedSet.clear();
+  buildGrid();
+  logEl.innerHTML = '';
+  tbody.innerHTML = '';
+  statStep.textContent = '0';
+  statRewards.textContent = '0/4';
+  statVisited.textContent = '0';
+  statCost.textContent = '0';
+  btnRun.disabled = false;
+  btnStep.disabled = false;
+
+  log('[ SYSTEM INITIALIZED ]', 'segment');
+  log('Maze loaded: 5×5 grid', 'info');
+  log('Start: (0,0)  Rewards: (1,4),(2,1),(4,0),(4,4)', 'info');
+  log('Heuristic: Manhattan Distance h(n)', 'info');
+  log('Press RUN or STEP to begin A* search…', 'info');
+}
+
+// Events
+btnRun.addEventListener('click', startRun);
+btnStep.addEventListener('click', () => { if (!running) doStep(); });
+btnReset.addEventListener('click', fullReset);
+speedEl.addEventListener('input', () => { speedVal.textContent = speedEl.value; });
+
+// Init
+solution = solveAll();
+fullReset();
+
+// Log solution summary to console
+console.table(solution.map((s,i)=>({
+  step:i, pos:`(${s.pos})`, action:s.action, g:s.g, h:s.h, f:s.g+s.h, event:s.event
+})));
+</script>
+</body>
+</html>
